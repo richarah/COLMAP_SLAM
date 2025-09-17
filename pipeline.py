@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from time import sleep
 
@@ -129,11 +130,11 @@ class Pipeline:
             success, image_id1, image_id2 = self.mapper.FindInitialImagePair(self.inc_mapper_options, image_id1, image_id2)
             if not success:
                 logger.warning("No good initial image pair found")
-                exit(1)
+                sys.exit(1)
             reg_init_success, init_display_img = self.mapper.RegisterInitialImagePair(self.inc_mapper_options, image_id1, image_id2)
             if not reg_init_success:
                 logger.warning("No registration for initial image pair")
-                exit(1)
+                sys.exit(1)
 
             if success:
                 logger.info(f"Initializing map with image pair {image_id1} and {image_id2}")
