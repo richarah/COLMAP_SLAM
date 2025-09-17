@@ -156,7 +156,7 @@ class IncrementalMapper:
         # max_len = min(self.reconstruction_.num_images(), int(options.init_max_num_images * 2))
         for image in [self.reconstruction_.images[img_id] for img_id in self.images_manager_.image_ids[:max_len]]:
             # Only images with correspondences can be registered.
-            if image.num_correspondences == 0:
+            if image.num_points2D() == 0:
                 continue
 
             # Only use images for initialization a maximum number of times.
@@ -172,7 +172,7 @@ class IncrementalMapper:
             image_info = {
                 "image_id": image.image_id,
                 "prior_focal_length": camera.has_prior_focal_length,
-                "num_correspondences": image.num_correspondences
+                "num_correspondences": image.num_points2D()
             }
             image_infos.append(image_info)
 
@@ -195,7 +195,7 @@ class IncrementalMapper:
         num_correspondences = {}
 
         for point2D_idx in range(image1.num_points2D()):
-            for corr in self.graph_.find_correspondences(image_id1, point2D_idx):
+            for corr in self.graph_.extract_correspondences(image_id1, point2D_idx):
                 if self.num_registrations_.get(corr.image_id, 0) == 0:
                     num_correspondences[corr.image_id] = num_correspondences.get(corr.image_id, 0) + 1
 
@@ -292,25 +292,29 @@ class IncrementalMapper:
 
         matches = self.graph_.find_correspondences_between_images(image_id1, image_id2)
 
-        points1 = [image1.points2D[point_id[0]].xy for point_id in matches]
+        points1 = np.array([image1.points2D[point_id[0]].xy for point_id in matches])
 
-        points2 = [image2.points2D[point_id[1]].xy for point_id in matches]
+        points2 = np.array([image2.points2D[point_id[1]].xy for point_id in matches])
+
+        # Convert matches to numpy array for the function
+        matches_array = np.array(matches, dtype=np.uint32)
 
         two_view_geometry_options = pycolmap.TwoViewGeometryOptions()
         two_view_geometry_options.ransac.min_num_trials = 30
         two_view_geometry_options.ransac.max_error = options.init_max_error
 
-        answer = pycolmap.two_view_geometry_estimation(points1, points2, camera1, camera2, two_view_geometry_options)
+        two_view_geometry = pycolmap.estimate_two_view_geometry(camera1, points1, camera2, points2, matches=matches_array, options=two_view_geometry_options)
 
-        if not answer["success"]:
+        # Check if estimation was successful by checking if we have enough inliers
+        if not hasattr(two_view_geometry, 'num_inliers') or two_view_geometry.num_inliers < options.init_min_num_inliers:
             return False
 
-        flow_constr = self.OpticalFlowCalculator(points1, points2, answer["inliers"], camera1.focal_length_x,
+        flow_constr = self.OpticalFlowCalculator(points1, points2, two_view_geometry.inliers, camera1.focal_length_x,
                                                  camera1.focal_length_y)
-        if flow_constr > options.optical_flow_threshold * 1.1 and answer["num_inliers"] >= options.init_min_num_inliers and abs(
-                answer["tvec"][2]) < options.init_max_forward_motion:
+        if flow_constr > options.optical_flow_threshold * 1.1 and two_view_geometry.num_inliers >= options.init_min_num_inliers and abs(
+                two_view_geometry.tvec[2]) < options.init_max_forward_motion:
             self.prev_init_image_pair_id_ = image_pair_id
-            self.prev_init_two_view_geometry_ = answer
+            self.prev_init_two_view_geometry_ = two_view_geometry
             return True
 
         return False
@@ -446,7 +450,7 @@ class IncrementalMapper:
             for point2D_idx in range(image.num_points2D()):
                 point3D_id = image.points2D[point2D_idx].point3D_id
                 if (point3D_id < 18446744073709551615):
-                    for corr in self.graph_.find_correspondences(image_id, point2D_idx):
+                    for corr in self.graph_.extract_correspondences(image_id, point2D_idx):
                         if corr.image_id in valid_img_ids and self.num_registrations_.get(corr.image_id, 0) == 0:
                             num_correspondences[corr.image_id] = num_correspondences.get(corr.image_id, 0) + 1
 
@@ -492,7 +496,7 @@ class IncrementalMapper:
             for point2D_idx in range(last_keyframe.num_points2D()):
                 point3D_id = last_keyframe.points2D[point2D_idx].point3D_id
                 if (point3D_id < 18446744073709551615):
-                    for corr in self.graph_.find_correspondences(last_keyframe_id, point2D_idx):
+                    for corr in self.graph_.extract_correspondences(last_keyframe_id, point2D_idx):
                         if corr.image_id == current_img_id and self.num_registrations_.get(current_img_id, 0) == 0:
                             points_3D.append(self.reconstruction_.points3D[point3D_id].xyz)
                             points_2D_current_img.append(current_img.points2D[corr.point2D_idx].xy)
@@ -694,7 +698,7 @@ class IncrementalMapper:
             for point2D_idx in range(image.num_points2D()):
                 point3D_id = image.points2D[point2D_idx].point3D_id
                 if (point3D_id < 18446744073709551615):
-                    for corr in self.graph_.find_correspondences(image_id, point2D_idx):
+                    for corr in self.graph_.extract_correspondences(image_id, point2D_idx):
                         if corr.image_id == query_img_id and self.num_registrations_.get(query_img_id, 0) == 0:
                             points_3D.append(self.reconstruction_.points3D[point3D_id].xyz)
                             points_2D.append(query_img.points2D[corr.point2D_idx].xy)

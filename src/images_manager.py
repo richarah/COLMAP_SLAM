@@ -66,10 +66,13 @@ class ImagesManager:
         for image_id in tqdm(range(len(frame_names)), "Registering the corresponding images"):
             self.register_image(image_id)
         self.image_ids = sorted(self.image_ids)
-        # Set the correspondences
-        for image_id in range(len(frame_names)):
-            self.reconstruction.images[image_id].num_observations = self.graph.num_observations_for_image(image_id)
-            self.reconstruction.images[image_id].num_correspondences = self.graph.num_correspondences_for_image(image_id)
+        
+        # Finalize the correspondence graph after all images and correspondences are added
+        self.graph.finalize()
+        # Set the correspondences (commented out - these properties no longer exist in newer pycolmap)
+        # for image_id in range(len(frame_names)):
+        #     self.reconstruction.images[image_id].num_observations = self.graph.num_observations_for_image(image_id)
+        #     self.reconstruction.images[image_id].num_correspondences = self.graph.num_correspondences_for_image(image_id)
 
 
     # Extract keypoints+descriptors, add image to reconstruction and graph and add correspondences
