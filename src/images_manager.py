@@ -81,13 +81,30 @@ class ImagesManager:
                                                                                self.frame_names[image_id],
                                                                                self.extractor,
                                                                                self.used_extractor)
+        # Add rig and frame to reconstruction first (only once)
+        if not hasattr(self, '_rig_added'):
+            rig = pycolmap.Rig()
+            rig.rig_id = 0  # Single rig for all frames
+            self.reconstruction.add_rig(rig)
+            self._rig_added = True
+        
+        frame = pycolmap.Frame()
+        frame.frame_id = image_id
+        frame.rig_id = 0  # Associate with rig 0
+        self.reconstruction.add_frame(frame)
+        
+        # Create image with frame_id
         image = pycolmap.Image(
             image_id=image_id, 
             name=str(self.frame_names[image_id]),
             camera_id=self.camera.camera_id
         )
+        image.frame_id = image_id
         points2D = [keypoint.pt for keypoint in self.kp_map[image_id]]
-        image.points2D = pycolmap.ListPoint2D([pycolmap.Point2D(p) for p in points2D])
+        point2d_list = pycolmap.Point2DList()
+        for p in points2D:
+            point2d_list.append(pycolmap.Point2D(xy=p))
+        image.points2D = point2d_list
         self.reconstruction.add_image(image)
         self.graph.add_image(image_id, len(image.points2D))
         self.image_ids.append(image_id)
