@@ -81,16 +81,32 @@ class ImagesManager:
                                                                                self.frame_names[image_id],
                                                                                self.extractor,
                                                                                self.used_extractor)
-        # Add rig and frame to reconstruction first (only once)
+        # Add rig with sensor to reconstruction first (only once)
         if not hasattr(self, '_rig_added'):
+            # Create sensor
+            sensor = pycolmap.sensor_t()
+            sensor.id = 0
+            sensor.type = pycolmap.SensorType.CAMERA
+            
+            # Create rig and add reference sensor
             rig = pycolmap.Rig()
-            rig.rig_id = 0  # Single rig for all frames
+            rig.rig_id = 0
+            rig.add_ref_sensor(sensor)  # Add as reference sensor
+            
             self.reconstruction.add_rig(rig)
             self._rig_added = True
+            self._sensor = sensor  # Store for reuse
         
         frame = pycolmap.Frame()
         frame.frame_id = image_id
         frame.rig_id = 0  # Associate with rig 0
+        
+        # Create data object using stored sensor
+        data = pycolmap.data_t()
+        data.id = image_id
+        data.sensor_id = self._sensor
+        frame.add_data_id(data)
+        
         self.reconstruction.add_frame(frame)
         
         # Create image with frame_id
