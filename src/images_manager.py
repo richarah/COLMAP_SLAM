@@ -81,8 +81,11 @@ class ImagesManager:
                                                                                self.frame_names[image_id],
                                                                                self.extractor,
                                                                                self.used_extractor)
-        image = pycolmap.Image(id=image_id, name=str(self.frame_names[image_id]),
-                                camera_id=self.camera.camera_id)
+        image = pycolmap.Image(
+            image_id=image_id, 
+            name=str(self.frame_names[image_id]),
+            camera_id=self.camera.camera_id
+        )
         points2D = [keypoint.pt for keypoint in self.kp_map[image_id]]
         image.points2D = pycolmap.ListPoint2D([pycolmap.Point2D(p) for p in points2D])
         self.reconstruction.add_image(image)

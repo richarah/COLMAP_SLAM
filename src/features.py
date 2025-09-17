@@ -13,7 +13,12 @@ def init(used_extractor,used_matcher):
         feature_conf = extract_features.confs['superpoint_aachen']
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         Model = utils.base_model.dynamic_load(extractors, feature_conf['model']['name'])
-        extractor = Model(feature_conf['model']).eval().to(device) 
+        try:
+            extractor = Model(feature_conf['model']).eval().to(device)
+        except torch.cuda.OutOfMemoryError:
+            print("CUDA out of memory during SuperPoint model loading, falling back to CPU")
+            device = 'cpu'
+            extractor = Model(feature_conf['model']).eval().to(device)
         
     if used_matcher == enums.Matchers.OrbHamming:
         matcher=cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
@@ -21,7 +26,12 @@ def init(used_extractor,used_matcher):
         matcher_conf = match_features.confs['superglue']
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         Model = utils.base_model.dynamic_load(matchers, matcher_conf['model']['name'])
-        matcher = Model(matcher_conf['model']).eval().to(device)
+        try:
+            matcher = Model(matcher_conf['model']).eval().to(device)
+        except torch.cuda.OutOfMemoryError:
+            print("CUDA out of memory during SuperGlue model loading, falling back to CPU")
+            device = 'cpu'
+            matcher = Model(matcher_conf['model']).eval().to(device)
     return extractor,matcher
 
 
@@ -82,7 +92,13 @@ def SuperPoint_detector(extractor,img_pth,save,out_pth,name):
         'image': img_tens,
         'original_size':size_tens,
     }
-    pred = extractor(utils.tools.map_tensor(data, lambda x: x.to(device)))
+    try:
+        pred = extractor({k: v.to(device) if hasattr(v, 'to') else v for k, v in data.items()})
+    except torch.cuda.OutOfMemoryError:
+        print("CUDA out of memory during SuperPoint feature extraction, falling back to CPU")
+        device = 'cpu'
+        extractor = extractor.to(device)
+        pred = extractor({k: v.to(device) if hasattr(v, 'to') else v for k, v in data.items()})
     pred = {k: v[0].cpu().detach().numpy() for k, v in pred.items()}
     torch.squeeze(size_tens,dim=0)
     pred.update({'image_size': size_tens})
@@ -109,16 +125,32 @@ def orb_matcher(bf,keypoint, query, save=False, img_pth=Path(''), out_pth=Path('
 def SuperGlue_matcher(matcher,img1_data,img2_data):
     data={}
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    for k, v in img1_data.items():
-        data[k+'0'] = torch.from_numpy(v.__array__()).float().to(device)
-            # some matchers might expect an image but only use its size
-        data['image0'] = torch.empty((1,)+(img1_data['image_size'][0][0],img1_data['image_size'][0][1])[::-1])
-    for k, v in img2_data.items():
-        data[k+'1'] = torch.from_numpy(v.__array__()).float().to(device)
-            # some matchers might expect an image but only use its size
-        data['image1'] = torch.empty((1,)+(img2_data['image_size'][0][0],img2_data['image_size'][0][1])[::-1])
-    data = {k: v[None] for k, v in data.items()}
-    matches_data = matcher(data)
+    try:
+        for k, v in img1_data.items():
+            data[k+'0'] = torch.from_numpy(v.__array__()).float().to(device)
+                # some matchers might expect an image but only use its size
+            data['image0'] = torch.empty((1,)+(img1_data['image_size'][0][0],img1_data['image_size'][0][1])[::-1])
+        for k, v in img2_data.items():
+            data[k+'1'] = torch.from_numpy(v.__array__()).float().to(device)
+                # some matchers might expect an image but only use its size
+            data['image1'] = torch.empty((1,)+(img2_data['image_size'][0][0],img2_data['image_size'][0][1])[::-1])
+        data = {k: v[None] for k, v in data.items()}
+        matches_data = matcher(data)
+    except torch.cuda.OutOfMemoryError:
+        print("CUDA out of memory during SuperGlue matching, falling back to CPU")
+        device = 'cpu'
+        matcher = matcher.to(device)
+        data={}
+        for k, v in img1_data.items():
+            data[k+'0'] = torch.from_numpy(v.__array__()).float().to(device)
+                # some matchers might expect an image but only use its size
+            data['image0'] = torch.empty((1,)+(img1_data['image_size'][0][0],img1_data['image_size'][0][1])[::-1])
+        for k, v in img2_data.items():
+            data[k+'1'] = torch.from_numpy(v.__array__()).float().to(device)
+                # some matchers might expect an image but only use its size
+            data['image1'] = torch.empty((1,)+(img2_data['image_size'][0][0],img2_data['image_size'][0][1])[::-1])
+        data = {k: v[None] for k, v in data.items()}
+        matches_data = matcher(data)
     matches = matches_data['matches0'][0].cpu().short().numpy()
     scores = matches_data['matching_scores0'][0].cpu().half().numpy()
     matches_list=[]
